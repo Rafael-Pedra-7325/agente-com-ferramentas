@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>agente-com-ferramentas — Function Calling Loop & Trace Inspector</title>
+  <style>
+    :root {
+      --bg-base: #09090b;
+      --bg-surface: #111114;
+      --bg-elevated: #18181b;
+      --bg-code: #0c0c0f;
+      --border: #27272a;
+      --border-subtle: #1f1f23;
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --accent-soft: rgba(99, 102, 241, 0.14);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.14);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.14);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.14);
+      --cyan: #06b6d4;
+      --cyan-soft: rgba(6, 182, 212, 0.14);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header */
+    header {
+      border-bottom: 1px solid var(--border);
+      background: rgba(9, 9, 11, 0.85);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+    .header-inner {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #6366f1, #06b6d4);
+      display: grid;
+      place-items: center;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+    }
+    .brand h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+    }
+    .badge-accent {
+      border-color: rgba(99, 102, 241, 0.4);
+      background: var(--accent-soft);
+      color: #a5b4fc;
+    }
+    .nav-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-surface);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .nav-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .nav-tab:hover { color: var(--text-primary); }
+    .nav-tab.active {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+
+    /* Main Container */
+    main {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* Playground Grid */
+    .playground-grid {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 1024px) {
+      .playground-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+    }
+    .card-body { padding: 18px; }
+
+    /* Controls */
+    label.field-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    textarea, input[type="password"], input[type="text"], select {
+      width: 100%;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    textarea:focus, input:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 92px; line-height: 1.45; }
+
+    .control-group { margin-bottom: 16px; }
+    .mode-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: var(--bg-code);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .mode-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .mode-btn.active {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 11px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.15s;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-ghost:hover { color: var(--text-primary); border-color: #3f3f46; }
+
+    /* Scenario Pills */
+    .scenarios-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .scenario-btn {
+      text-align: left;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .scenario-btn:hover {
+      border-color: var(--accent);
+      background: rgba(99, 102, 241, 0.06);
+    }
+    .scenario-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .scenario-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .scenario-desc {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    /* Metrics Bar */
+    .metrics-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 640px) { .metrics-strip { grid-template-columns: repeat(2, 1fr); } }
+    .metric-box {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .metric-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .metric-val { font-family: var(--font-mono); font-size: 15px; font-weight: 600; margin-top: 2px; }
+
+    /* Trace Timeline */
+    .timeline { display: flex; flex-direction: column; gap: 14px; }
+    .trace-step {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      position: relative;
+    }
+    .trace-step.status-blocked { border-left: 3px solid var(--red); }
+    .trace-step.status-ok { border-left: 3px solid var(--cyan); }
+    .trace-step.status-final { border-left: 3px solid var(--green); }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .step-left { display: flex; align-items: center; gap: 8px; }
+    .step-num {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      padding: 2px 7px;
+      border-radius: 5px;
+    }
+    .pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 5px;
+      font-weight: 600;
+    }
+    .pill-ok { background: var(--cyan-soft); color: #67e8f9; }
+    .pill-blocked { background: var(--red-soft); color: #fca5a5; }
+    .pill-final { background: var(--green-soft); color: #6ee7b7; }
+    .pill-warn { background: var(--amber-soft); color: #fcd34d; }
+
+    .step-thought {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+    .io-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 768px) { .io-grid { grid-template-columns: 1fr; } }
+    .io-box {
+      background: #070709;
+      border: 1px solid var(--border-subtle);
+      border-radius: 7px;
+      padding: 10px;
+      overflow-x: auto;
+    }
+    .io-label {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+    pre {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #e4e4e7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* Final Answer Box */
+    .final-box {
+      margin-top: 16px;
+      background: linear-gradient(180deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.02));
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .final-box.warn {
+      background: linear-gradient(180deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02));
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+    .final-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #6ee7b7;
+      margin-bottom: 6px;
+    }
+    .final-box.warn .final-title { color: #fcd34d; }
+    .final-text { font-size: 13.5px; color: var(--text-primary); white-space: pre-line; }
+
+    /* Data Explorer Tables */
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      font-family: var(--font-mono);
+    }
+    table.data-table th, table.data-table td {
+      text-align: left;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    table.data-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      background: var(--bg-code);
+    }
+
+    /* Code Viewer */
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+    }
+    .code-block {
+      background: var(--bg-code);
+      padding: 16px;
+      max-height: 620px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">&gt;_</div>
+        <div>
+          <h1>
+            agente-com-ferramentas
+            <span class="badge badge-accent">Function Calling Loop</span>
+          </h1>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="playground">Playground &amp; Trace</button>
+        <button class="nav-tab" data-tab="datastore">Base SQL &amp; Docs</button>
+        <button class="nav-tab" data-tab="code">Código Python / TS</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- TAB 1: PLAYGROUND & TRACE INSPECTOR -->
+    <section id="tab-playground" class="view active">
+      <div class="playground-grid">
+        <!-- Left Panel: Configuration & Scenarios -->
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Configuração do Agente</span>
+              <span class="badge" id="engine-badge">Sandbox Determinístico</span>
+            </div>
+            <div class="card-body">
+              <div class="control-group">
+                <label class="field-label">Modo de Execução</label>
+                <div class="mode-switch">
+                  <button type="button" class="mode-btn active" id="mode-sandbox">Sandbox (Sem API Key)</button>
+                  <button type="button" class="mode-btn" id="mode-gemini">Gemini 2.5 Flash API</button>
+                </div>
+              </div>
+
+              <div class="control-group" id="api-key-group" style="display: none;">
+                <label class="field-label">
+                  <span>GEMINI_API_KEY (apenas em memória)</span>
+                </label>
+                <input type="password" id="gemini-key" placeholder="AIzaSy..." autocomplete="off" />
+              </div>
+
+              <div class="control-group">
+                <label class="field-label">
+                  <span>Limite Máximo de Passos (<code>max_steps</code>)</span>
+                  <strong id="max-steps-val" style="font-family: var(--font-mono); color: var(--accent-hover);">6</strong>
+                </label>
+                <input type="range" id="max-steps" min="1" max="10" value="6" />
+              </div>
+
+              <div class="control-group">
+                <label class="field-label">Objetivo / Consulta do Usuário</label>
+                <textarea id="prompt-input">Compare a receita total do Q4 na tabela vendas com a meta oficial do Q4 nos documentos internos e calcule o percentual atingido.</textarea>
+              </div>
+
+              <button type="button" class="btn-primary" id="run-btn">
+                <span>Executar Loop do Agente</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Cenários de 1 Clique (Recrutadores)</span>
+            </div>
+            <div class="card-body scenarios-list">
+              <button type="button" class="scenario-btn" data-scenario="q4">
+                <div class="scenario-top">
+                  <span class="scenario-title">1. Meta Q4 (Docs + SQL + Calculadora AST)</span>
+                  <span class="pill pill-ok">3 tools</span>
+                </div>
+                <div class="scenario-desc">Orquestra busca documental, agregação SQL e cálculo percentual sem eval().</div>
+              </button>
+
+              <button type="button" class="scenario-btn" data-scenario="guardrail_sql">
+                <div class="scenario-top">
+                  <span class="scenario-title">2. Guardrail SQL Read-Only (DELETE bloqueado)</span>
+                  <span class="pill pill-blocked">Security</span>
+                </div>
+                <div class="scenario-desc">Testa bloqueio de escrita (ERR_READ_ONLY_SQL_GUARD) e recuperação segura via SELECT.</div>
+              </button>
+
+              <button type="button" class="scenario-btn" data-scenario="max_steps">
+                <div class="scenario-top">
+                  <span class="scenario-title">3. Estouro de Limite (max_steps = 2)</span>
+                  <span class="pill pill-warn">Guardrail</span>
+                </div>
+                <div class="scenario-desc">Interrompe determinísticamente um loop multi-etapa ao atingir o teto de passos.</div>
+              </button>
+
+              <button type="button" class="scenario-btn" data-scenario="sla">
+                <div class="scenario-top">
+                  <span class="scenario-title">4. Auditoria de SLA &amp; Multas Contratuais</span>
+                  <span class="pill pill-ok">Multi-step</span>
+                </div>
+                <div class="scenario-desc">Cruza chamados P1 violados no SQL com a multa unitária definida na política SLA.</div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Panel: Trace Inspector -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Inspetor de Trace &amp; Observabilidade</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="badge" id="trace-id-badge">trc_ready</span>
+              <button type="button" class="btn-ghost" id="export-json-btn">Exportar .json</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="metrics-strip">
+              <div class="metric-box">
+                <div class="metric-label">Status</div>
+                <div class="metric-val" id="metric-status" style="color: var(--green);">completed</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Passos Usados</div>
+                <div class="metric-val" id="metric-steps">0 / 6</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Latência Total</div>
+                <div class="metric-val" id="metric-latency">0.0 ms</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Ferramentas</div>
+                <div class="metric-val" id="metric-tools">3 ativas</div>
+              </div>
+            </div>
+
+            <div id="timeline-container" class="timeline"></div>
+            <div id="final-answer-container"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: DATASTORE & DOCS -->
+    <section id="tab-datastore" class="view">
+      <div style="display: grid; grid-template-columns: 1fr; gap: 20px;">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Tabela SQL em Memória: <code>vendas</code> (Somente Leitura)</span>
+            <span class="badge">7 registros</span>
+          </div>
+          <div class="card-body" style="overflow-x: auto;">
+            <table class="data-table" id="vendas-table"></table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Tabela SQL em Memória: <code>chamados_sla</code> (Somente Leitura)</span>
+            <span class="badge">4 registros</span>
+          </div>
+          <div class="card-body" style="overflow-x: auto;">
+            <table class="data-table" id="sla-table"></table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Base Documental Corporativa (<code>buscar_documentos</code>)</span>
+            <span class="badge">4 documentos indexados</span>
+          </div>
+          <div class="card-body" id="docs-list" style="display: grid; gap: 12px;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: PYTHON & TYPESCRIPT SOURCE CODE -->
+    <section id="tab-code" class="view">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div class="card">
+          <div class="code-header">
+            <span style="font-family: var(--font-mono); font-size: 13px; font-weight: 600;">src/agent.py</span>
+            <button type="button" class="btn-ghost" onclick="copyCode('py-code', this)">Copiar Python</button>
+          </div>
+          <pre class="code-block" id="py-code"></pre>
+        </div>
+
+        <div class="card">
+          <div class="code-header">
+            <span style="font-family: var(--font-mono); font-size: 13px; font-weight: 600;">src/agent.ts</span>
+            <button type="button" class="btn-ghost" onclick="copyCode('ts-code', this)">Copiar TypeScript</button>
+          </div>
+          <pre class="code-block" id="ts-code"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // =========================================================================
+    // 1. IN-MEMORY DATASETS & KNOWLEDGE BASE
+    // =========================================================================
+    const DB = {
+      vendas: [
+        { id: 1, data: "2026-10-03", regiao: "Sudeste", produto: "Enterprise AI Suite", categoria: "SaaS", receita: 185000, custo: 42000, unidades: 5 },
+        { id: 2, data: "2026-10-12", regiao: "Sul", produto: "DataGuard SQL Proxy", categoria: "Seguranca", receita: 92000, custo: 21000, unidades: 4 },
+        { id: 3, data: "2026-10-19", regiao: "Sudeste", produto: "Observability Cloud", categoria: "DevOps", receita: 134000, custo: 35000, unidades: 6 },
+        { id: 4, data: "2026-11-02", regiao: "Nordeste", produto: "Enterprise AI Suite", categoria: "SaaS", receita: 148000, custo: 33600, unidades: 4 },
+        { id: 5, data: "2026-11-08", regiao: "Centro-Oeste", produto: "DataGuard SQL Proxy", categoria: "Seguranca", receita: 69000, custo: 15750, unidades: 3 },
+        { id: 6, data: "2026-11-14", regiao: "Sul", produto: "Observability Cloud", categoria: "DevOps", receita: 112000, custo: 29000, unidades: 5 },
+        { id: 7, data: "2026-11-16", regiao: "Sudeste", produto: "Enterprise AI Suite", categoria: "SaaS", receita: 222000, custo: 50400, unidades: 6 }
+      ],
+      chamados_sla: [
+        { id: 101, cliente: "Banco Horizonte", severidade: "P1", tempo_resposta_min: 12, sla_limite_min: 15, violado: 0 },
+        { id: 102, cliente: "Logistica Sul", severidade: "P1", tempo_resposta_min: 28, sla_limite_min: 15, violado: 1 },
+        { id: 103, cliente: "Varejo Prime", severidade: "P2", tempo_resposta_min: 45, sla_limite_min: 60, violado: 0 },
+        { id: 104, cliente: "Fintech Nova", severidade: "P1", tempo_resposta_min: 19, sla_limite_min: 15, violado: 1 }
+      ]
+    };
+
+    const DOCS = [
+      {
+        id: "DOC-01",
+        titulo: "Metas Financeiras e OKRs Q4 2026",
+        categoria: "Financeiro",
+        conteudo: "A meta consolidada de receita bruta para o Q4 2026 é de R$ 1.150.000,00, com margem bruta mínima alvo de 72%. A região Sudeste responde por 48% da meta trimestral."
+      },
+      {
+        id: "DOC-02",
+        titulo: "Política de SLA Enterprise e Penalidades",
+        categoria: "Operações",
+        conteudo: "Chamados críticos P1 possuem SLA máximo de primeira resposta de 15 minutos. Cada violação de SLA P1 gera crédito contratual automático de R$ 4.500,00 na fatura mensal."
+      },
+      {
+        id: "DOC-03",
+        titulo: "Política Comercial e Alçadas de Desconto",
+        categoria: "Comercial",
+        conteudo: "Executivos de contas podem conceder até 12% de desconto sem aprovação. Descontos entre 12% e 20% exigem aprovação da Diretoria Comercial."
+      },
+      {
+        id: "DOC-04",
+        titulo: "Arquitetura e Guardrails do Agente Autônomo",
+        categoria: "Engenharia",
+        conteudo: "Todo agente em produção opera com limite máximo de passos (max_steps <= 8), timeout por ferramenta e acesso estritamente somente leitura em bancos analíticos."
+      }
+    ];
+
+    // =========================================================================
+    // 2. REAL CLIENT-SIDE TOOLS (SQL READ-ONLY, DOC SEARCH, AST CALCULATOR)
+    // =========================================================================
+    const FORBIDDEN_SQL = /\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|REPLACE|ATTACH|DETACH|PRAGMA|GRANT|REVOKE|EXEC)\b/i;
+
+    function toolConsultarSQL(query) {
+      const cleaned = String(query || "").trim().replace(/;+$/, "");
+      if (!cleaned) {
+        return { ok: false, error: "ERR_EMPTY_QUERY", message: "Consulta SQL vazia." };
+      }
+      if (cleaned.includes(";") || cleaned.includes("--") || cleaned.includes("/*")) {
+        return { ok: false, error: "ERR_READ_ONLY_SQL_GUARD", message: "Múltiplas instruções ou comentários bloqueados." };
+      }
+      if (!/^SELECT\b/i.test(cleaned) || FORBIDDEN_SQL.test(cleaned)) {
+        return {
+          ok: false,
+          error: "ERR_READ_ONLY_SQL_GUARD",
+          message: "Operação bloqueada: apenas consultas SELECT somente leitura são autorizadas."
+        };
+      }
+
+      const fromMatch = cleaned.match(/\bFROM\s+(vendas|chamados_sla)\b/i);
+      if (!fromMatch) {
+        return { ok: false, error: "ERR_UNKNOWN_TABLE", message: "Tabela não encontrada. Use `vendas` ou `chamados_sla`." };
+      }
+      const tableName = fromMatch[1].toLowerCase();
+      let rows = [...DB[tableName]];
+
+      // WHERE simple filter
+      const whereMatch = cleaned.match(/\bWHERE\s+([a-zA-Z0-9_]+)\s*(=|>|<|>=|<=)\s*('[^']+'|[0-9.]+)/i);
+      if (whereMatch) {
+        const [, col, op, rawVal] = whereMatch;
+        const val = rawVal.startsWith("'") ? rawVal.slice(1, -1) : Number(rawVal);
+        rows = rows.filter(r => {
+          const cell = r[col];
+          if (op === "=") return String(cell).toLowerCase() === String(val).toLowerCase();
+          if (op === ">") return Number(cell) > Number(val);
+          if (op === "<") return Number(cell) < Number(val);
+          if (op === ">=") return Number(cell) >= Number(val);
+          if (op === "<=") return Number(cell) <= Number(val);
+          return true;
+        });
+      }
+
+      // Aggregations
+      if (/\bSUM\(receita\)/i.test(cleaned) && !/\bGROUP\s+BY\b/i.test(cleaned)) {
+        const receita_total = rows.reduce((acc, r) => acc + Number(r.receita || 0), 0);
+        const custo_total = rows.reduce((acc, r) => acc + Number(r.custo || 0), 0);
+        return { ok: true, row_count: 1, rows: [{ receita_total, custo_total, registros: rows.length }] };
+      }
+
+      if (/\bGROUP\s+BY\s+regiao\b/i.test(cleaned)) {
+        const map = {};
+        for (const r of rows) {
+          if (!map[r.regiao]) map[r.regiao] = { regiao: r.regiao, receita_total: 0, unidades: 0 };
+          map[r.regiao].receita_total += r.receita;
+          map[r.regiao].unidades += r.unidades;
+        }
+        const grouped = Object.values(map).sort((a, b) => b.receita_total - a.receita_total);
+        return { ok: true, row_count: grouped.length, rows: grouped };
+      }
+
+      if (/\bCOUNT\(\*\)/i.test(cleaned)) {
+        return { ok: true, row_count: 1, rows: [{ total: rows.length }] };
+      }
+
+      return { ok: true, row_count: rows.length, rows };
+    }
+
+    function toolBuscarDocumentos(consulta, topK = 3) {
+      const tokens = String(consulta || "").toLowerCase().split(/[^a-z0-9áéíóúãõç]+/i).filter(Boolean);
+      const matches = DOCS.map(doc => {
+        const hay = `${doc.titulo} ${doc.categoria} ${doc.conteudo}`.toLowerCase();
+        const score = tokens.reduce((s, t) => s + (hay.includes(t) ? (doc.titulo.toLowerCase().includes(t) ? 3 : 1) : 0), 0);
+        return { id: doc.id, titulo: doc.titulo, categoria: doc.categoria, relevancia: score, trecho: doc.conteudo };
+      })
+        .filter(d => d.relevancia > 0)
+        .sort((a, b) => b.relevancia - a.relevancia)
+        .slice(0, Math.max(1, Math.min(Number(topK) || 3, 5)));
+
+      return { ok: true, total_encontrados: matches.length, matches };
+    }
+
+    // Recursive-descent AST math evaluator (Zero eval)
+    function toolCalculadora(expressao) {
+      const src = String(expressao || "").replace(/\s+/g, "");
+      if (!src || src.length > 200) {
+        return { ok: false, error: "ERR_INVALID_EXPRESSION", message: "Expressão inválida." };
+      }
+      let pos = 0;
+
+      function parseExpr() {
+        let val = parseTerm();
+        while (pos < src.length && (src[pos] === "+" || src[pos] === "-")) {
+          const op = src[pos++];
+          const right = parseTerm();
+          val = op === "+" ? val + right : val - right;
+        }
+        return val;
+      }
+
+      function parseTerm() {
+        let val = parsePow();
+        while (pos < src.length && (src[pos] === "*" || src[pos] === "/" || src[pos] === "%")) {
+          const op = src[pos++];
+          const right = parsePow();
+          if (op === "*") val *= right;
+          else if (op === "/") {
+            if (right === 0) throw new Error("Divisão por zero.");
+            val /= right;
+          } else val %= right;
+        }
+        return val;
+      }
+
+      function parsePow() {
+        let base = parseUnary();
+        if (src[pos] === "^") {
+          pos++;
+          base = Math.pow(base, parsePow());
+        }
+        return base;
+      }
+
+      function parseUnary() {
+        if (src[pos] === "-") { pos++; return -parseUnary(); }
+        if (src[pos] === "+") { pos++; return parseUnary(); }
+        return parsePrimary();
+      }
+
+      function parsePrimary() {
+        if (src[pos] === "(") {
+          pos++;
+          const val = parseExpr();
+          if (src[pos] !== ")") throw new Error("Parêntese não fechado.");
+          pos++;
+          return val;
+        }
+        const start = pos;
+        while (pos < src.length && /[0-9.]/.test(src[pos])) pos++;
+        if (start === pos) throw new Error(`Token inesperado: '${src[pos] || "EOF"}'`);
+        const num = Number(src.slice(start, pos));
+        if (Number.isNaN(num)) throw new Error("Número inválido.");
+        return num;
+      }
+
+      try {
+        const result = parseExpr();
+        if (pos !== src.length) throw new Error("Caracteres inesperados.");
+        return { ok: true, expression: expressao, result: Number(result.toFixed(6)) };
+      } catch (err) {
+        return { ok: false, error: "ERR_AST_EVALUATION", message: err.message };
+      }
+    }
+
+    function dispatchTool(name, args) {
+      if (name === "consultar_sql") return toolConsultarSQL(args.query);
+      if (name === "buscar_documentos") return toolBuscarDocumentos(args.consulta, args.top_k);
+      if (name === "calculadora") return toolCalculadora(args.expressao);
+      return { ok: false, error: "ERR_UNKNOWN_TOOL", message: `Ferramenta desconhecida: ${name}` };
+    }
+
+    // =========================================================================
+    // 3. SANDBOX DETERMINISTIC PLANNER & GEMINI REAL API LOOP
+    // =========================================================================
+    let currentMode = "sandbox";
+    let lastTrace = null;
+
+    function buildSandboxPlan(prompt) {
+      const p = prompt.toLowerCase();
+
+      if (p.includes("delete") || p.includes("drop") || p.includes("apague") || p.includes("guardrail")) {
+        return [
+          {
+            thought: "Tentando executar a instrução solicitada diretamente no banco analítico para validar o guardrail.",
+            tool: "consultar_sql",
+            args: { query: "DELETE FROM vendas WHERE regiao = 'Sul'" }
+          },
+          {
+            thought: "O guardrail bloqueou a operação de escrita (ERR_READ_ONLY_SQL_GUARD). Recuperando de forma segura via SELECT.",
+            tool: "consultar_sql",
+            args: { query: "SELECT * FROM vendas WHERE regiao = 'Sul'" }
+          },
+          {
+            thought: "Consolidando resposta após bloqueio seguro da escrita.",
+            final: "A tentativa de remoção (`DELETE FROM vendas WHERE regiao = 'Sul'`) foi bloqueada imediatamente pelo guardrail `ERR_READ_ONLY_SQL_GUARD`.\n\nEm modo somente leitura, localizei os 2 registros existentes da região Sul (totalizando R$ 204.000,00 em receita), que permanecem intactos."
+          }
+        ];
+      }
+
+      if (p.includes("sla") || p.includes("multa") || p.includes("chamado")) {
+        return [
+          {
+            thought: "Consultando chamados críticos P1 com violação de SLA na tabela `chamados_sla`.",
+            tool: "consultar_sql",
+            args: { query: "SELECT * FROM chamados_sla WHERE violado = 1" }
+          },
+          {
+            thought: "Buscando o valor da multa contratual por violação P1 na base documental.",
+            tool: "buscar_documentos",
+            args: { consulta: "SLA P1 penalidade credito", top_k: 2 }
+          },
+          {
+            thought: "Calculando o impacto financeiro total das 2 violações identificadas.",
+            tool: "calculadora",
+            args: { expressao: "2 * 4500" }
+          },
+          {
+            thought: "Gerando parecer executivo da auditoria de SLA.",
+            final: "Auditoria de SLA concluída:\n• Chamados P1 violados: 2 (Logistica Sul com 28 min e Fintech Nova com 19 min, frente ao limite de 15 min).\n• Penalidade unitária (DOC-02): R$ 4.500,00 por violação.\n• Crédito contratual total devido: R$ 9.000,00."
+          }
+        ];
+      }
+
+      // Default: Meta Q4 scenario
+      return [
+        {
+          thought: "Buscando a meta oficial de receita do Q4 2026 nos documentos corporativos.",
+          tool: "buscar_documentos",
+          args: { consulta: "meta receita Q4 2026 margem", top_k: 2 }
+        },
+        {
+          thought: "Consultando a receita realizada acumulada na tabela `vendas` via SQL somente leitura.",
+          tool: "consultar_sql",
+          args: { query: "SELECT SUM(receita) AS receita_total, SUM(custo) AS custo_total FROM vendas" }
+        },
+        {
+          thought: "Calculando o percentual de atingimento da meta (R$ 962.000 / R$ 1.150.000) via calculadora AST.",
+          tool: "calculadora",
+          args: { expressao: "(962000 / 1150000) * 100" }
+        },
+        {
+          thought: "Calculando a margem bruta realizada para verificar conformidade com o mínimo de 72%.",
+          tool: "calculadora",
+          args: { expressao: "((962000 - 226750) / 962000) * 100" }
+        },
+        {
+          thought: "Todos os dados foram verificados com precisão. Consolidando resposta executiva.",
+          final: "Resumo Executivo Q4 2026:\n• Receita Realizada (SQL): R$ 962.000,00\n• Meta Oficial Q4 (DOC-01): R$ 1.150.000,00\n• Atingimento da Meta: 83,65% (faltam R$ 188.000,00 para 100%)\n• Margem Bruta Realizada: 76,43% (acima do piso corporativo de 72%)."
+        }
+      ];
+    }
+
+    async function runSandboxLoop(prompt, maxSteps) {
+      const t0 = performance.now();
+      const trace = {
+        trace_id: `trc_${Date.now()}`,
+        mode: "sandbox",
+        prompt,
+        max_steps: maxSteps,
+        started_at: new Date().toISOString(),
+        status: "running",
+        total_latency_ms: 0,
+        final_answer: "",
+        steps: []
+      };
+
+      const plan = buildSandboxPlan(prompt);
+
+      for (let i = 0; i < plan.length; i++) {
+        const stepNum = i + 1;
+        if (stepNum > maxSteps) {
+          trace.status = "max_steps_exceeded";
+          trace.final_answer = `Execução interrompida pelo guardrail max_steps=${maxSteps} antes de concluir o plano (${plan.length} passos necessários).`;
+          trace.total_latency_ms = Number((performance.now() - t0).toFixed(2));
+          return trace;
+        }
+
+        const s0 = performance.now();
+        await new Promise(r => setTimeout(r, 110));
+        const item = plan[i];
+
+        if (item.final) {
+          trace.steps.push({
+            step: stepNum,
+            timestamp: new Date().toISOString(),
+            thought: item.thought,
+            status: "final",
+            latency_ms: Number((performance.now() - s0).toFixed(2))
+          });
+          trace.status = "completed";
+          trace.final_answer = item.final;
+          trace.total_latency_ms = Number((performance.now() - t0).toFixed(2));
+          return trace;
+        }
+
+        const output = dispatchTool(item.tool, item.args);
+        trace.steps.push({
+          step: stepNum,
+          timestamp: new Date().toISOString(),
+          thought: item.thought,
+          tool_name: item.tool,
+          tool_args: item.args,
+          tool_output: output,
+          status: output.error === "ERR_READ_ONLY_SQL_GUARD" ? "blocked" : (output.ok ? "ok" : "error"),
+          latency_ms: Number((performance.now() - s0).toFixed(2))
+        });
+      }
+
+      return trace;
+    }
+
+    async function runGeminiApiLoop(prompt, maxSteps, apiKey) {
+      const t0 = performance.now();
+      const trace = {
+        trace_id: `trc_${Date.now()}`,
+        mode: "gemini-2.5-flash",
+        prompt,
+        max_steps: maxSteps,
+        started_at: new Date().toISOString(),
+        status: "running",
+        total_latency_ms: 0,
+        final_answer: "",
+        steps: []
+      };
+
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const contents = [{ role: "user", parts: [{ text: prompt }] }];
+      const tools = [{
+        functionDeclarations: [
+          {
+            name: "consultar_sql",
+            description: "Executa SQL SELECT somente leitura nas tabelas `vendas(id, data, regiao, produto, categoria, receita, custo, unidades)` e `chamados_sla(id, cliente, severidade, tempo_resposta_min, sla_limite_min, violado)`.",
+            parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] }
+          },
+          {
+            name: "buscar_documentos",
+            description: "Busca metas Q4, política de SLA, descontos e arquitetura nos documentos internos.",
+            parameters: { type: "OBJECT", properties: { consulta: { type: "STRING" }, top_k: { type: "INTEGER" } }, required: ["consulta"] }
+          },
+          {
+            name: "calculadora",
+            description: "Calcula expressões aritméticas com segurança.",
+            parameters: { type: "OBJECT", properties: { expressao: { type: "STRING" } }, required: ["expressao"] }
+          }
+        ]
+      }];
+
+      for (let step = 1; step <= maxSteps; step++) {
+        const s0 = performance.now();
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: "Você é um agente corporativo analítico. Use as ferramentas fornecidas para responder com precisão." }] },
+            contents,
+            tools,
+            generationConfig: { temperature: 0.1 }
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error?.message || `HTTP ${res.status}`);
+        }
+
+        const candidateContent = data.candidates?.[0]?.content;
+        contents.push(candidateContent);
+        const parts = candidateContent?.parts || [];
+        const fcs = parts.filter(p => p.functionCall).map(p => p.functionCall);
+        const texts = parts.filter(p => p.text).map(p => p.text);
+
+        if (fcs.length === 0) {
+          trace.steps.push({
+            step,
+            timestamp: new Date().toISOString(),
+            thought: "Síntese final concluída pelo modelo.",
+            status: "final",
+            latency_ms: Number((performance.now() - s0).toFixed(2))
+          });
+          trace.status = "completed";
+          trace.final_answer = texts.join("\n").trim();
+          trace.total_latency_ms = Number((performance.now() - t0).toFixed(2));
+          return trace;
+        }
+
+        const responseParts = [];
+        for (const fc of fcs) {
+          const output = dispatchTool(fc.name, fc.args || {});
+          trace.steps.push({
+            step,
+            timestamp: new Date().toISOString(),
+            thought: texts[0] || `Chamando ${fc.name}`,
+            tool_name: fc.name,
+            tool_args: fc.args || {},
+            tool_output: output,
+            status: output.error === "ERR_READ_ONLY_SQL_GUARD" ? "blocked" : (output.ok ? "ok" : "error"),
+            latency_ms: Number((performance.now() - s0).toFixed(2))
+          });
+          responseParts.push({ functionResponse: { name: fc.name, response: output } });
+        }
+        contents.push({ role: "user", parts: responseParts });
+      }
+
+      trace.status = "max_steps_exceeded";
+      trace.final_answer = `Execução interrompida pelo guardrail max_steps=${maxSteps}.`;
+      trace.total_latency_ms = Number((performance.now() - t0).toFixed(2));
+      return trace;
+    }
+
+    // =========================================================================
+    // 4. UI RENDERING & EVENT HANDLERS
+    // =========================================================================
+    function renderTrace(trace) {
+      lastTrace = trace;
+      document.getElementById("trace-id-badge").textContent = trace.trace_id;
+      const statusEl = document.getElementById("metric-status");
+      statusEl.textContent = trace.status;
+      statusEl.style.color = trace.status === "completed" ? "var(--green)" : "var(--amber)";
+
+      document.getElementById("metric-steps").textContent = `${trace.steps.length} / ${trace.max_steps}`;
+      document.getElementById("metric-latency").textContent = `${trace.total_latency_ms} ms`;
+
+      const timeline = document.getElementById("timeline-container");
+      timeline.innerHTML = "";
+
+      trace.steps.forEach(s => {
+        const pillClass = s.status === "blocked" ? "pill-blocked" : (s.status === "final" ? "pill-final" : "pill-ok");
+        const stepClass = s.status === "blocked" ? "status-blocked" : (s.status === "final" ? "status-final" : "status-ok");
+
+        const ioHtml = s.tool_name ? `
+          <div class="io-grid">
+            <div class="io-box">
+              <div class="io-label">Tool Call → ${s.tool_name}</div>
+              <pre>${escapeHtml(JSON.stringify(s.tool_args, null, 2))}</pre>
+            </div>
+            <div class="io-box">
+              <div class="io-label">Tool Output (${s.status.toUpperCase()})</div>
+              <pre>${escapeHtml(JSON.stringify(s.tool_output, null, 2))}</pre>
+            </div>
+          </div>
+        ` : "";
+
+        const card = document.createElement("div");
+        card.className = `trace-step ${stepClass}`;
+        card.innerHTML = `
+          <div class="step-header">
+            <div class="step-left">
+              <span class="step-num">PASSO ${s.step}</span>
+              <span class="pill ${pillClass}">${s.tool_name || "FINAL_SYNTHESIS"}</span>
+            </div>
+            <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${s.latency_ms} ms</span>
+          </div>
+          <div class="step-thought">${escapeHtml(s.thought)}</div>
+          ${ioHtml}
+        `;
+        timeline.appendChild(card);
+      });
+
+      const finalContainer = document.getElementById("final-answer-container");
+      const isWarn = trace.status !== "completed";
+      finalContainer.innerHTML = `
+        <div class="final-box ${isWarn ? "warn" : ""}">
+          <div class="final-title">${isWarn ? "Execução Interrompida (Guardrail)" : "Resposta Final Consolidada"}</div>
+          <div class="final-text">${escapeHtml(trace.final_answer)}</div>
+        </div>
+      `;
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    // Tabs
+    document.querySelectorAll(".nav-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+      });
+    });
+
+    // Mode switch
+    document.getElementById("mode-sandbox").addEventListener("click", () => {
+      currentMode = "sandbox";
+      document.getElementById("mode-sandbox").classList.add("active");
+      document.getElementById("mode-gemini").classList.remove("active");
+      document.getElementById("api-key-group").style.display = "none";
+      document.getElementById("engine-badge").textContent = "Sandbox Determinístico";
+    });
+
+    document.getElementById("mode-gemini").addEventListener("click", () => {
+      currentMode = "gemini";
+      document.getElementById("mode-gemini").classList.add("active");
+      document.getElementById("mode-sandbox").classList.remove("active");
+      document.getElementById("api-key-group").style.display = "block";
+      document.getElementById("engine-badge").textContent = "Gemini 2.5 Flash Live";
+    });
+
+    // Max steps slider
+    const maxStepsInput = document.getElementById("max-steps");
+    maxStepsInput.addEventListener("input", () => {
+      document.getElementById("max-steps-val").textContent = maxStepsInput.value;
+    });
+
+    // Scenario presets
+    const SCENARIOS = {
+      q4: {
+        steps: 6,
+        prompt: "Compare a receita total do Q4 na tabela vendas com a meta oficial do Q4 nos documentos internos e calcule o percentual atingido."
+      },
+      guardrail_sql: {
+        steps: 6,
+        prompt: "Execute DELETE FROM vendas WHERE regiao = 'Sul' para limpar os dados antigos e confirme o que restou."
+      },
+      max_steps: {
+        steps: 2,
+        prompt: "Compare a receita total do Q4 na tabela vendas com a meta oficial do Q4 nos documentos internos e calcule o percentual atingido."
+      },
+      sla: {
+        steps: 6,
+        prompt: "Verifique quais chamados P1 violaram o SLA na tabela chamados_sla e calcule o valor total das multas contratuais."
+      }
+    };
+
+    document.querySelectorAll(".scenario-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const sc = SCENARIOS[btn.dataset.scenario];
+        maxStepsInput.value = sc.steps;
+        document.getElementById("max-steps-val").textContent = sc.steps;
+        document.getElementById("prompt-input").value = sc.prompt;
+        executeAgent();
+      });
+    });
+
+    // Execute button
+    async function executeAgent() {
+      const btn = document.getElementById("run-btn");
+      const prompt = document.getElementById("prompt-input").value.trim();
+      const maxSteps = Number(maxStepsInput.value);
+      if (!prompt) return;
+
+      btn.disabled = true;
+      btn.textContent = "Executando Loop...";
+
+      try {
+        let trace;
+        if (currentMode === "gemini") {
+          const apiKey = document.getElementById("gemini-key").value.trim();
+          if (!apiKey) throw new Error("Informe sua GEMINI_API_KEY ou alterne para o Modo Sandbox.");
+          trace = await runGeminiApiLoop(prompt, maxSteps, apiKey);
+        } else {
+          trace = await runSandboxLoop(prompt, maxSteps);
+        }
+        renderTrace(trace);
+      } catch (err) {
+        alert("Erro na execução: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Executar Loop do Agente";
+      }
+    }
+
+    document.getElementById("run-btn").addEventListener("click", executeAgent);
+
+    // Export Trace JSON
+    document.getElementById("export-json-btn").addEventListener("click", () => {
+      if (!lastTrace) return;
+      const blob = new Blob([JSON.stringify(lastTrace, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${lastTrace.trace_id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Populate Datastore Tab
+    function renderTable(elId, rows) {
+      const table = document.getElementById(elId);
+      const cols = Object.keys(rows[0]);
+      table.innerHTML = `
+        <thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${escapeHtml(r[c])}</td>`).join("")}</tr>`).join("")}</tbody>
+      `;
+    }
+    renderTable("vendas-table", DB.vendas);
+    renderTable("sla-table", DB.chamados_sla);
+
+    document.getElementById("docs-list").innerHTML = DOCS.map(d => `
+      <div style="background: var(--bg-code); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <strong style="font-size:13px;">${d.id} — ${d.titulo}</strong>
+          <span class="badge">${d.categoria}</span>
+        </div>
+        <p style="font-size:12.5px; color: var(--text-secondary);">${d.conteudo}</p>
+      </div>
+    `).join("");
+
+    // Populate Code Tab
+    const PYTHON_SNIPPET = `from google import genai
+from google.genai import types
+import ast, sqlite3, re, time
+
+class ToolCallingAgent:
+    """Loop explícito de Function Calling com max_steps, SQL Read-Only e AST Calc."""
+
+    def run(self, prompt: str, max_steps: int = 6):
+        contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+        for step in range(1, max_steps + 1):
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=contents,
+                config=types.GenerateContentConfig(tools=self._tool_declarations(), temperature=0.1),
+            )
+            candidate = response.candidates[0]
+            contents.append(candidate.content)
+            calls = [p.function_call for p in candidate.content.parts if p.function_call]
+            if not calls:
+                return response.text  # Síntese final concluída
+            tool_parts = [
+                types.Part.from_function_response(name=fc.name, response=self.dispatch_tool(fc.name, dict(fc.args)))
+                for fc in calls
+            ]
+            contents.append(types.Content(role="user", parts=tool_parts))
+        raise RuntimeError(f"Guardrail acionado: max_steps={max_steps} excedido")`;
+
+    const TS_SNIPPET = `import { GoogleGenAI, type Content } from "@google/genai";
+
+export async function runToolCallingAgent(prompt: string, maxSteps = 6) {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const contents: Content[] = [{ role: "user", parts: [{ text: prompt }] }];
+
+  for (let step = 1; step <= maxSteps; step++) {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents,
+      config: { tools: [{ functionDeclarations: TOOL_DECLARATIONS }], temperature: 0.1 },
+    });
+    const content = response.candidates?.[0]?.content!;
+    contents.push(content);
+    const calls = (content.parts ?? []).filter((p) => p.functionCall).map((p) => p.functionCall!);
+    if (calls.length === 0) return response.text;
+
+    const responses = calls.map((fc) => ({
+      functionResponse: { name: fc.name!, response: dispatchTool(fc.name!, fc.args ?? {}) },
+    }));
+    contents.push({ role: "user", parts: responses });
+  }
+  throw new Error(\`Guardrail acionado: maxSteps=\${maxSteps} excedido\`);
+}`;
+
+    document.getElementById("py-code").textContent = PYTHON_SNIPPET;
+    document.getElementById("ts-code").textContent = TS_SNIPPET;
+
+    function copyCode(elId, btn) {
+      navigator.clipboard.writeText(document.getElementById(elId).textContent);
+      const old = btn.textContent;
+      btn.textContent = "Copiado!";
+      setTimeout(() => (btn.textContent = old), 1500);
+    }
+
+    // Run default scenario on load
+    executeAgent();
+  </script>
+</body>
+</html>
